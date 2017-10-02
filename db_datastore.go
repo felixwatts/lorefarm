@@ -2,7 +2,7 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
-package bookshelf
+package lorefarm
 
 import (
 	"fmt"
@@ -19,12 +19,12 @@ type datastoreDB struct {
 }
 
 // Ensure datastoreDB conforms to the BookDatabase interface.
-var _ BookDatabase = &datastoreDB{}
+var _ PageDatabase = &datastoreDB{}
 
 // newDatastoreDB creates a new BookDatabase backed by Cloud Datastore.
 // See the datastore and google packages for details on creating a suitable Client:
 // https://godoc.org/cloud.google.com/go/datastore
-func newDatastoreDB(client *datastore.Client) (BookDatabase, error) {
+func newDatastoreDB(client *datastore.Client) (PageDatabase, error) {
 	ctx := context.Background()
 	// Verify that we can communicate and authenticate with the datastore service.
 	t, err := client.NewTransaction(ctx)
@@ -44,95 +44,65 @@ func (db *datastoreDB) Close() {
 	// No op.
 }
 
-func (db *datastoreDB) datastoreKey(id int64) *datastore.Key {
-	return datastore.IDKey("Book", id, nil)
+func (db *datastoreDB) PageId(id int64) *datastore.Key {
+	return datastore.IDKey("Page", id, nil)
 }
 
 // GetBook retrieves a book by its ID.
-func (db *datastoreDB) GetBook(id int64) (*Book, error) {
+func (db *datastoreDB) GetPage(id int64) (*Page, error) {
 	ctx := context.Background()
-	k := db.datastoreKey(id)
-	book := &Book{}
-	if err := db.client.Get(ctx, k, book); err != nil {
-		return nil, fmt.Errorf("datastoredb: could not get Book: %v", err)
+	k := db.PageId(id)
+	page := &Page{}
+	if err := db.client.Get(ctx, k, page); err != nil {
+		return nil, fmt.Errorf("datastoredb: could not get Page: %v", err)
 	}
-	book.ID = id
-	return book, nil
+	page.Id = id
+	return page, nil
 }
 
-// AddBook saves a given book, assigning it a new ID.
-func (db *datastoreDB) AddBook(b *Book) (id int64, err error) {
+func (db *datastoreDB) GetPageTemplateData(id int64) (*PageTemplateData, error) {
+	var page, err = db.GetPage(id)
+	if(err != nil) {
+		return nil, err
+	}
+	var result = PageTemplateData {
+		Page: page,
+		ChildPages: []*Page{},
+	}
+
+	result.ChildPages, err = db.ListChildren(id)
+	if(err != nil) {
+		return nil, err
+	}
+
+	return &result, nil;
+}
+
+func (db *datastoreDB) AddPage(b *Page) (id int64, err error) {
 	ctx := context.Background()
-	k := datastore.IncompleteKey("Book", nil)
+	k := datastore.IncompleteKey("Page", nil)
 	k, err = db.client.Put(ctx, k, b)
 	if err != nil {
-		return 0, fmt.Errorf("datastoredb: could not put Book: %v", err)
+		return 0, fmt.Errorf("datastoredb: could not put Page: %v", err)
 	}
 	return k.ID, nil
 }
 
-// DeleteBook removes a given book by its ID.
-func (db *datastoreDB) DeleteBook(id int64) error {
-	ctx := context.Background()
-	k := db.datastoreKey(id)
-	if err := db.client.Delete(ctx, k); err != nil {
-		return fmt.Errorf("datastoredb: could not delete Book: %v", err)
-	}
-	return nil
-}
-
-// UpdateBook updates the entry for a given book.
-func (db *datastoreDB) UpdateBook(b *Book) error {
-	ctx := context.Background()
-	k := db.datastoreKey(b.ID)
-	if _, err := db.client.Put(ctx, k, b); err != nil {
-		return fmt.Errorf("datastoredb: could not update Book: %v", err)
-	}
-	return nil
-}
-
 // ListBooks returns a list of books, ordered by title.
-func (db *datastoreDB) ListBooks() ([]*Book, error) {
+func (db *datastoreDB) ListChildren(id int64) ([]*Page, error) {
 	ctx := context.Background()
-	books := make([]*Book, 0)
-	q := datastore.NewQuery("Book").
-		Order("Title")
+	children := make([]*Page, 0)
+	q := datastore.NewQuery("Page").Filter("ParentId =", db.PageId(id))
 
-	keys, err := db.client.GetAll(ctx, q, &books)
+	keys, err := db.client.GetAll(ctx, q, &children)
 
 	if err != nil {
-		return nil, fmt.Errorf("datastoredb: could not list books: %v", err)
+		return nil, fmt.Errorf("datastoredb: could not list children: %v", err)
 	}
 
 	for i, k := range keys {
-		books[i].ID = k.ID
+		children[i].Id = k.ID
 	}
 
-	return books, nil
-}
-
-// ListBooksCreatedBy returns a list of books, ordered by title, filtered by
-// the user who created the book entry.
-func (db *datastoreDB) ListBooksCreatedBy(userID string) ([]*Book, error) {
-	ctx := context.Background()
-	if userID == "" {
-		return db.ListBooks()
-	}
-
-	books := make([]*Book, 0)
-	q := datastore.NewQuery("Book").
-		Filter("CreatedByID =", userID).
-		Order("Title")
-
-	keys, err := db.client.GetAll(ctx, q, &books)
-
-	if err != nil {
-		return nil, fmt.Errorf("datastoredb: could not list books: %v", err)
-	}
-
-	for i, k := range keys {
-		books[i].ID = k.ID
-	}
-
-	return books, nil
+	return children, nil
 }

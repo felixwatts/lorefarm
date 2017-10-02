@@ -1,13 +1,11 @@
 package lorefarm
 
 import (
-	"errors"
 	"log"
 	"os"
 
-	"cloud.google.com/go/datastore"
-	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/storage"
+	"cloud.google.com/go/datastore"
 
 	"github.com/gorilla/sessions"
 
@@ -17,9 +15,11 @@ import (
 )
 
 var (
-	DB          BookDatabase
+	DB          PageDatabase
 	OAuthConfig *oauth2.Config
 	SessionStore sessions.Store
+	StorageBucket     *storage.BucketHandle
+	StorageBucketName string
 )
 
 func init() {
@@ -32,13 +32,28 @@ func init() {
 		log.Fatal(err)
 	}
 
-	OAuthConfig = configureOAuthClient("173856195020-suj3gkujjiddij6nkr77gb1jvhbdtu2m.apps.googleusercontent.com", "qntKGX2VBQzaRo0D7TBbUNtU")
+	DB, err = configureDatastoreDB("lorefarm-181215")
 
-	cookieStore := sessions.NewCookieStore([]byte("something-very-secret"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	OAuthConfig = configureOAuthClient("173856195020-suj3gkujjiddij6nkr77gb1jvhbdtu2m.apps.googleusercontent.com", OAuthClientSecret)
+
+	cookieStore := sessions.NewCookieStore([]byte(CookieEncryptionSecret))
 	cookieStore.Options = &sessions.Options{
 		HttpOnly: true,
 	}
 	SessionStore = cookieStore
+}
+
+func configureDatastoreDB(projectID string) (PageDatabase, error) {
+	ctx := context.Background()
+	client, err := datastore.NewClient(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return newDatastoreDB(client)
 }
 
 func configureStorage(bucketID string) (*storage.BucketHandle, error) {

@@ -7,35 +7,34 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
+	//"encoding/json"
+	//"errors"
 	"fmt"
-	"io"
+	//"io"
 	"log"
 	"net/http"
 	"os"
-	"path"
+	//"path"
 	"strconv"
 
-	"cloud.google.com/go/pubsub"
-	"cloud.google.com/go/storage"
+	//"cloud.google.com/go/pubsub"
+	//"cloud.google.com/go/storage"
 
-	"golang.org/x/net/context"
+	//"golang.org/x/net/context"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/satori/go.uuid"
+	//"github.com/satori/go.uuid"
 
 	"google.golang.org/appengine"
 
-	"github.com/GoogleCloudPlatform/golang-samples/getting-started/bookshelf"
+	"github.com/felixwatts/lorefarm"	
+	//"github.com/GoogleCloudPlatform/golang-samples/getting-started/bookshelf"
 )
 
 var (
 	// See template.go
-	listTmpl   = parseTemplate("list.html")
-	editTmpl   = parseTemplate("edit.html")
-	detailTmpl = parseTemplate("detail.html")
+	pageTmpl   = parseTemplate("page.html")
 )
 
 func main() {
@@ -48,25 +47,13 @@ func registerHandlers() {
 	// See http://www.gorillatoolkit.org/pkg/mux
 	r := mux.NewRouter()
 
-	r.Handle("/", http.RedirectHandler("/books", http.StatusFound))
+	r.Handle("/", http.RedirectHandler("/page/5649391675244544", http.StatusFound))
 
-	r.Methods("GET").Path("/books").
-		Handler(appHandler(listHandler))
-	r.Methods("GET").Path("/books/mine").
-		Handler(appHandler(listMineHandler))
-	r.Methods("GET").Path("/books/{id:[0-9]+}").
-		Handler(appHandler(detailHandler))
-	r.Methods("GET").Path("/books/add").
-		Handler(appHandler(addFormHandler))
-	r.Methods("GET").Path("/books/{id:[0-9]+}/edit").
-		Handler(appHandler(editFormHandler))
+	r.Methods("GET").Path("/page/{id:[0-9]+}").
+		Handler(appHandler(pageHandler))
 
-	r.Methods("POST").Path("/books").
+	r.Methods("POST").Path("/new").
 		Handler(appHandler(createHandler))
-	r.Methods("POST", "PUT").Path("/books/{id:[0-9]+}").
-		Handler(appHandler(updateHandler))
-	r.Methods("POST").Path("/books/{id:[0-9]+}:delete").
-		Handler(appHandler(deleteHandler)).Name("delete")
 
 	// The following handlers are defined in auth.go and used in the
 	// "Authenticating Users" part of the Getting Started guide.
@@ -91,215 +78,59 @@ func registerHandlers() {
 	// [END request_logging]
 }
 
-// listHandler displays a list with summaries of books in the database.
-func listHandler(w http.ResponseWriter, r *http.Request) *appError {
-	books, err := bookshelf.DB.ListBooks()
-	if err != nil {
-		return appErrorf(err, "could not list books: %v", err)
-	}
-
-	return listTmpl.Execute(w, r, books)
-}
-
-// listMineHandler displays a list of books created by the currently
-// authenticated user.
-func listMineHandler(w http.ResponseWriter, r *http.Request) *appError {
-	user := profileFromSession(r)
-	if user == nil {
-		http.Redirect(w, r, "/login?redirect=/books/mine", http.StatusFound)
-		return nil
-	}
-
-	books, err := bookshelf.DB.ListBooksCreatedBy(user.ID)
-	if err != nil {
-		return appErrorf(err, "could not list books: %v", err)
-	}
-
-	return listTmpl.Execute(w, r, books)
-}
-
 // bookFromRequest retrieves a book from the database given a book ID in the
 // URL's path.
-func bookFromRequest(r *http.Request) (*bookshelf.Book, error) {
+func pageFromRequest(r *http.Request) (*lorefarm.PageTemplateData, error) {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("bad book id: %v", err)
+		return nil, fmt.Errorf("bad page id: %v", err)
 	}
-	book, err := bookshelf.DB.GetBook(id)
+	page, err := lorefarm.DB.GetPageTemplateData(id)
 	if err != nil {
-		return nil, fmt.Errorf("could not find book: %v", err)
+		return nil, fmt.Errorf("could not find page: %v", err)
 	}
-	return book, nil
+	return page, nil
 }
 
 // detailHandler displays the details of a given book.
-func detailHandler(w http.ResponseWriter, r *http.Request) *appError {
-	book, err := bookFromRequest(r)
+func pageHandler(w http.ResponseWriter, r *http.Request) *appError {
+	page, err := pageFromRequest(r)
 	if err != nil {
 		return appErrorf(err, "%v", err)
 	}
 
-	return detailTmpl.Execute(w, r, book)
+	return pageTmpl.Execute(w, r, page)
 }
 
-// addFormHandler displays a form that captures details of a new book to add to
-// the database.
-func addFormHandler(w http.ResponseWriter, r *http.Request) *appError {
-	return editTmpl.Execute(w, r, nil)
-}
-
-// editFormHandler displays a form that allows the user to edit the details of
-// a given book.
-func editFormHandler(w http.ResponseWriter, r *http.Request) *appError {
-	book, err := bookFromRequest(r)
-	if err != nil {
-		return appErrorf(err, "%v", err)
-	}
-
-	return editTmpl.Execute(w, r, book)
-}
-
-// bookFromForm populates the fields of a Book from form values
+// pageFromForm populates the fields of a Page from form values
 // (see templates/edit.html).
-func bookFromForm(r *http.Request) (*bookshelf.Book, error) {
-	imageURL, err := uploadFileFromForm(r)
-	if err != nil {
-		return nil, fmt.Errorf("could not upload file: %v", err)
-	}
-	if imageURL == "" {
-		imageURL = r.FormValue("imageURL")
+func pageFromForm(r *http.Request) (*lorefarm.Page, error) {
+
+	i, err := strconv.Atoi(r.FormValue("parentId")) // todo check parent exists
+	if(err != nil) {
+		return nil, fmt.Errorf("Invalid parent id")
 	}
 
-	book := &bookshelf.Book{
-		Title:         r.FormValue("title"),
-		Author:        r.FormValue("author"),
-		PublishedDate: r.FormValue("publishedDate"),
-		ImageURL:      imageURL,
-		Description:   r.FormValue("description"),
-		CreatedBy:     r.FormValue("createdBy"),
-		CreatedByID:   r.FormValue("createdByID"),
+	page := &lorefarm.Page{
+	ParentId:  lorefarm.DB.PageId(int64(i)),
+	Content:        r.FormValue("content"),
 	}
 
-	// If the form didn't carry the user information for the creator, populate it
-	// from the currently logged in user (or mark as anonymous).
-	if book.CreatedByID == "" {
-		user := profileFromSession(r)
-		if user != nil {
-			// Logged in.
-			book.CreatedBy = user.DisplayName
-			book.CreatedByID = user.ID
-		} else {
-			// Not logged in.
-			book.SetCreatorAnonymous()
-		}
-	}
-
-	return book, nil
-}
-
-// uploadFileFromForm uploads a file if it's present in the "image" form field.
-func uploadFileFromForm(r *http.Request) (url string, err error) {
-	f, fh, err := r.FormFile("image")
-	if err == http.ErrMissingFile {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-
-	if bookshelf.StorageBucket == nil {
-		return "", errors.New("storage bucket is missing - check config.go")
-	}
-
-	// random filename, retaining existing extension.
-	name := uuid.NewV4().String() + path.Ext(fh.Filename)
-
-	ctx := context.Background()
-	w := bookshelf.StorageBucket.Object(name).NewWriter(ctx)
-	w.ACL = []storage.ACLRule{{Entity: storage.AllUsers, Role: storage.RoleReader}}
-	w.ContentType = fh.Header.Get("Content-Type")
-
-	// Entries are immutable, be aggressive about caching (1 day).
-	w.CacheControl = "public, max-age=86400"
-
-	if _, err := io.Copy(w, f); err != nil {
-		return "", err
-	}
-	if err := w.Close(); err != nil {
-		return "", err
-	}
-
-	const publicURL = "https://storage.googleapis.com/%s/%s"
-	return fmt.Sprintf(publicURL, bookshelf.StorageBucketName, name), nil
+	return page, nil
 }
 
 // createHandler adds a book to the database.
 func createHandler(w http.ResponseWriter, r *http.Request) *appError {
-	book, err := bookFromForm(r)
+	page, err := pageFromForm(r)
 	if err != nil {
-		return appErrorf(err, "could not parse book from form: %v", err)
+		return appErrorf(err, "could not parse page from form: %v", err)
 	}
-	id, err := bookshelf.DB.AddBook(book)
+	id, err := lorefarm.DB.AddPage(page)
 	if err != nil {
-		return appErrorf(err, "could not save book: %v", err)
+		return appErrorf(err, "could not save page: %v", err)
 	}
-	go publishUpdate(id)
-	http.Redirect(w, r, fmt.Sprintf("/books/%d", id), http.StatusFound)
+	http.Redirect(w, r, fmt.Sprintf("/page/%d", id), http.StatusFound)
 	return nil
-}
-
-// updateHandler updates the details of a given book.
-func updateHandler(w http.ResponseWriter, r *http.Request) *appError {
-	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
-	if err != nil {
-		return appErrorf(err, "bad book id: %v", err)
-	}
-
-	book, err := bookFromForm(r)
-	if err != nil {
-		return appErrorf(err, "could not parse book from form: %v", err)
-	}
-	book.ID = id
-
-	err = bookshelf.DB.UpdateBook(book)
-	if err != nil {
-		return appErrorf(err, "could not save book: %v", err)
-	}
-	go publishUpdate(book.ID)
-	http.Redirect(w, r, fmt.Sprintf("/books/%d", book.ID), http.StatusFound)
-	return nil
-}
-
-// deleteHandler deletes a given book.
-func deleteHandler(w http.ResponseWriter, r *http.Request) *appError {
-	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
-	if err != nil {
-		return appErrorf(err, "bad book id: %v", err)
-	}
-	err = bookshelf.DB.DeleteBook(id)
-	if err != nil {
-		return appErrorf(err, "could not delete book: %v", err)
-	}
-	http.Redirect(w, r, "/books", http.StatusFound)
-	return nil
-}
-
-// publishUpdate notifies Pub/Sub subscribers that the book identified with
-// the given ID has been added/modified.
-func publishUpdate(bookID int64) {
-	if bookshelf.PubsubClient == nil {
-		return
-	}
-
-	ctx := context.Background()
-
-	b, err := json.Marshal(bookID)
-	if err != nil {
-		return
-	}
-	topic := bookshelf.PubsubClient.Topic(bookshelf.PubsubTopicID)
-	_, err = topic.Publish(ctx, &pubsub.Message{Data: b}).Get(ctx)
-	log.Printf("Published update to Pub/Sub for Book ID %d: %v", bookID, err)
 }
 
 // http://blog.golang.org/error-handling-and-go

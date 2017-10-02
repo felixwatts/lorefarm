@@ -1,0 +1,18 @@
+<div class="page-container">
+  
+  <div class="page-current">
+      <a class="navigate-back" href="/page/{{.Page.ParentId.ID}}">{{.Page.Content}}</a>    
+  </div>
+  <div class="new-page">
+    <form method="post" enctype="multipart/form-data" action="/new">
+      <div class="form-group">
+        <textarea name="content"></textarea>
+      </div>   
+      <input type="hidden" name="parentId" value="{{.Page.Id}}"></input>
+      <input type="submit"></input>
+    </form>
+  </div>
+  <div class="pageNextContainer">
+      {{range .ChildPages}} <div class="pageNext"><a class="navigate-forward" href="/page/{{.Id}}">{{.Content}}</a></div> {{else}} {{end}}
+  </div>
+</div>
