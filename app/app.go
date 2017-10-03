@@ -1,40 +1,21 @@
-// Copyright 2015 Google Inc. All rights reserved.
-// Use of this source code is governed by the Apache 2.0
-// license that can be found in the LICENSE file.
-
-// Sample bookshelf is a fully-featured app demonstrating several Google Cloud APIs, including Datastore, Cloud SQL, Cloud Storage.
-// See https://cloud.google.com/go/getting-started/tutorial-app
 package main
 
 import (
-	//"encoding/json"
-	//"errors"
 	"fmt"
-	//"io"
 	"log"
 	"net/http"
 	"os"
-	//"path"
 	"strconv"
-
-	//"cloud.google.com/go/pubsub"
-	//"cloud.google.com/go/storage"
-
-	//"golang.org/x/net/context"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	//"github.com/satori/go.uuid"
-
 	"google.golang.org/appengine"
 
-	"github.com/felixwatts/lorefarm"	
-	//"github.com/GoogleCloudPlatform/golang-samples/getting-started/bookshelf"
+	"github.com/felixwatts/lorefarm"
 )
 
 var (
-	// See template.go
-	pageTmpl   = parseTemplate("page.html")
+	pageTmpl = parseTemplate("page.html")
 )
 
 func main() {
@@ -47,7 +28,8 @@ func registerHandlers() {
 	// See http://www.gorillatoolkit.org/pkg/mux
 	r := mux.NewRouter()
 
-	r.Handle("/", http.RedirectHandler("/page/5649391675244544", http.StatusFound))
+	// root redirects to first page
+	r.Handle("/", http.RedirectHandler(fmt.Sprintf("/page/%d", lorefarm.ROOT_PAGE_ID), http.StatusFound))
 
 	r.Methods("GET").Path("/page/{id:[0-9]+}").
 		Handler(appHandler(pageHandler))
@@ -55,8 +37,7 @@ func registerHandlers() {
 	r.Methods("POST").Path("/new").
 		Handler(appHandler(createHandler))
 
-	// The following handlers are defined in auth.go and used in the
-	// "Authenticating Users" part of the Getting Started guide.
+	// The following handlers are defined in auth.go
 	r.Methods("GET").Path("/login").
 		Handler(appHandler(loginHandler))
 	r.Methods("POST").Path("/logout").
@@ -71,21 +52,22 @@ func registerHandlers() {
 			w.Write([]byte("ok"))
 		})
 
-	// [START request_logging]
 	// Delegate all of the HTTP routing and serving to the gorilla/mux router.
 	// Log all requests using the standard Apache format.
 	http.Handle("/", handlers.CombinedLoggingHandler(os.Stderr, r))
-	// [END request_logging]
 }
 
-// bookFromRequest retrieves a book from the database given a book ID in the
+// pageFromRequest retrieves a page from the database given a page Id in the
 // URL's path.
-func pageFromRequest(r *http.Request) (*lorefarm.PageTemplateData, error) {
+func pageFromRequest(r *http.Request) (*lorefarm.Page, error) {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("bad page id: %v", err)
 	}
-	page, err := lorefarm.DB.GetPageTemplateData(id)
+	if(id == 0) {
+		id = lorefarm.ROOT_PAGE_ID
+	}
+	page, err := lorefarm.DB.GetPage(id)
 	if err != nil {
 		return nil, fmt.Errorf("could not find page: %v", err)
 	}
@@ -102,24 +84,23 @@ func pageHandler(w http.ResponseWriter, r *http.Request) *appError {
 	return pageTmpl.Execute(w, r, page)
 }
 
-// pageFromForm populates the fields of a Page from form values
-// (see templates/edit.html).
-func pageFromForm(r *http.Request) (*lorefarm.Page, error) {
+// pageFromForm populates the fields of a PageData from form values
+func pageFromForm(r *http.Request) (*lorefarm.PageData, error) {
 
 	i, err := strconv.Atoi(r.FormValue("parentId")) // todo check parent exists
 	if(err != nil) {
 		return nil, fmt.Errorf("Invalid parent id")
 	}
 
-	page := &lorefarm.Page{
-	ParentId:  lorefarm.DB.PageId(int64(i)),
+	page := &lorefarm.PageData{
+	ParentId:  int64(i),
 	Content:        r.FormValue("content"),
 	}
 
 	return page, nil
 }
 
-// createHandler adds a book to the database.
+// createHandler adds a book to the database based on POST values
 func createHandler(w http.ResponseWriter, r *http.Request) *appError {
 	page, err := pageFromForm(r)
 	if err != nil {

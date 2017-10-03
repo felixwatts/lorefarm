@@ -4,33 +4,20 @@
 
 package lorefarm
 
-import "cloud.google.com/go/datastore"
+const ROOT_PAGE_ID int64 = 5722646637445120
 
-type Page struct {
+type PageData struct {
 	Id            int64
-	ParentId *datastore.Key
+	ParentId int64
 	Content       string
 }
 
-type PageTemplateData struct {
-	Page *Page
-	ChildPages []*Page;
+type Page struct {
+	Current *PageData
+	Next []*PageData
 }
 
-// BookDatabase provides thread-safe access to a database of books.
 type PageDatabase interface {
-
-	PageId(id int64) *datastore.Key
-	
-	ListChildren(pageId int64) ([]*Page, error)
-
 	GetPage(id int64) (*Page, error)
-
-	GetPageTemplateData(id int64) (*PageTemplateData, error)
-
-	AddPage(b *Page) (id int64, err error)
-
-	// Close closes the database, freeing up any available resources.
-	// TODO(cbro): Close() should return an error.
-	Close()
+	AddPage(b *PageData) (id int64, err error)
 }

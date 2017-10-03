@@ -32,7 +32,7 @@ func init() {
 		log.Fatal(err)
 	}
 
-	DB, err = configureDatastoreDB("lorefarm-181215")
+	DB, err = configureDatabase("lorefarm-181215")
 
 	if err != nil {
 		log.Fatal(err)
@@ -47,13 +47,13 @@ func init() {
 	SessionStore = cookieStore
 }
 
-func configureDatastoreDB(projectID string) (PageDatabase, error) {
+func configureDatabase(projectID string) (PageDatabase, error) {
 	ctx := context.Background()
 	client, err := datastore.NewClient(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	return newDatastoreDB(client)
+	return newDatabase(client)
 }
 
 func configureStorage(bucketID string) (*storage.BucketHandle, error) {

@@ -5,8 +5,7 @@
 
 indexes:
 
-# This index enables filtering by "CreatedByID" and sort by "Title".
 - kind: Page
   properties:
-  - name: CreatedByID
+  - name: ParentId
     direction: asc
